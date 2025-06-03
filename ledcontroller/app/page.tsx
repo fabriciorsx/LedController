@@ -1,69 +1,75 @@
 'use client'
-import React, { useState, useEffect, useRef } from 'react';
-import { Palette, Zap, Save, RotateCcw, Wifi, WifiOff } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Palette, Zap, Save, RotateCcw, Wifi, WifiOff, Edit3 } from 'lucide-react';
+
+// Type definitions
+interface Color {
+  r: number;
+  g: number;
+  b: number;
+}
+
+interface HSB {
+  h: number;
+  s: number;
+  b: number;
+}
+
+interface Effect {
+  id: number;
+  name: string;
+  description: string;
+}
+
+interface PresetColor extends Color {
+  name: string;
+}
+
+interface ApiResponse {
+  success: boolean;
+  connected: boolean;
+  error?: string;
+  effectName?: string;
+}
+
+type EditableFieldType = 'r' | 'g' | 'b' | 'h' | 's' | 'v' | 'hex';
+
+interface EditableFieldProps {
+  label: string;
+  value: string | number;
+  field: EditableFieldType;
+  suffix?: string;
+  max?: number;
+}
 
 const LEDController = () => {
-  const [color, setColor] = useState({ r: 255, g: 0, b: 0 });
-  const [brightness, setBrightness] = useState(255);
-  const [effect, setEffect] = useState(0);
-  const [isConnected, setIsConnected] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
   
-  // Estados para o color picker
-  const [hue, setHue] = useState(0);
-  const [saturation, setSaturation] = useState(100);
-  const [pickerBrightness, setPickerBrightness] = useState(255);
-  const [hexColor, setHexColor] = useState('#ff0000');
+  const [color, setColor] = useState<Color>({ r: 255, g: 0, b: 0 });
+  const [brightness, setBrightness] = useState<number>(255);
+  const [effect, setEffect] = useState<number>(0);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [message, setMessage] = useState<string>('');
   
-  const colorPanelRef = useRef(null);
-  const hueSliderRef = useRef(null);
+  // Estados para edição
+  const [editingField, setEditingField] = useState<EditableFieldType | null>(null);
+  const [tempValues, setTempValues] = useState<Record<string, string>>({});
+  
+  const colorPanelRef = useRef<HTMLDivElement>(null);
+  const hueSliderRef = useRef<HTMLDivElement>(null);
 
   // URL da API
   const API_URL = '/api/';
 
-  const effects = [
+  const effects: Effect[] = [
     { id: 0, name: 'Estático', description: 'Cor fixa' },
     { id: 1, name: 'Rainbow', description: 'Arco-íris giratório' },
     { id: 2, name: 'Fade', description: 'Esmaecimento' },
     { id: 3, name: 'Color Cycle', description: 'Mudança gradual' }
   ];
 
-  // Função para converter HSB para RGB
-  const hsbToRgb = (h, s, b) => {
-    h = h % 360;
-    s = s / 100;
-    b = b / 255; 
-    
-    let c = b * s;
-    let x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-    let m = b - c;
-    
-    let r, g, bl;
-    
-    if (h >= 0 && h < 60) {
-      r = c; g = x; bl = 0;
-    } else if (h >= 60 && h < 120) {
-      r = x; g = c; bl = 0;
-    } else if (h >= 120 && h < 180) {
-      r = 0; g = c; bl = x;
-    } else if (h >= 180 && h < 240) {
-      r = 0; g = x; bl = c;
-    } else if (h >= 240 && h < 300) {
-      r = x; g = 0; bl = c;
-    } else {
-      r = c; g = 0; bl = x;
-    }
-    
-    return {
-      r: Math.round((r + m) * 255),
-      g: Math.round((g + m) * 255),
-      b: Math.round((bl + m) * 255)
-    };
-  };
-
-  // Função para converter RGB para HSB
-  const rgbToHsb = (r, g, b) => {
+  // Funções de conversão
+  const rgbToHsb = useCallback((r: number, g: number, b: number): HSB => {
     r /= 255;
     g /= 255;
     b /= 255;
@@ -89,61 +95,156 @@ const LEDController = () => {
     const brightness = Math.round(max * 255);
     
     return { h, s, b: brightness };
-  };
+  }, []);
 
-  // Atualizar cor quando picker mudar
-  useEffect(() => {
-    const rgb = hsbToRgb(hue, saturation, pickerBrightness);
-    setColor({ r: rgb.r, g: rgb.g, b: rgb.b });
+  const hsbToRgb = useCallback((h: number, s: number, b: number): Color => {
+    h = h % 360;
+    s = s / 100;
+    b = b / 255; 
     
-    const hexValue = '#' + 
-      rgb.r.toString(16).padStart(2, '0') + 
-      rgb.g.toString(16).padStart(2, '0') + 
-      rgb.b.toString(16).padStart(2, '0');
+    const c = b * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = b - c;
     
-    setHexColor(hexValue);
-  }, [hue, saturation, pickerBrightness]);
+    let r: number, g: number, bl: number;
+    
+    if (h >= 0 && h < 60) {
+      r = c; g = x; bl = 0;
+    } else if (h >= 60 && h < 120) {
+      r = x; g = c; bl = 0;
+    } else if (h >= 120 && h < 180) {
+      r = 0; g = c; bl = x;
+    } else if (h >= 180 && h < 240) {
+      r = 0; g = x; bl = c;
+    } else if (h >= 240 && h < 300) {
+      r = x; g = 0; bl = c;
+    } else {
+      r = c; g = 0; bl = x;
+    }
+    
+    return {
+      r: Math.round((r + m) * 255),
+      g: Math.round((g + m) * 255),
+      b: Math.round((bl + m) * 255)
+    };
+  }, []);
 
-  // Atualizar picker quando cor RGB mudar
-  useEffect(() => {
-    const hsb = rgbToHsb(color.r, color.g, color.b);
-    setHue(hsb.h);
-    setSaturation(hsb.s);
-    setPickerBrightness(hsb.b);
-  }, [color.r, color.g, color.b]);
+  const rgbToHex = useCallback((r: number, g: number, b: number): string => {
+    return '#' + 
+      r.toString(16).padStart(2, '0') + 
+      g.toString(16).padStart(2, '0') + 
+      b.toString(16).padStart(2, '0');
+  }, []);
+
+  const hexToRgb = useCallback((hex: string): Color | null => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : null;
+  }, []);
+
+  // Valores derivados do estado principal
+  const hsb = rgbToHsb(color.r, color.g, color.b);
+  const hexColor = rgbToHex(color.r, color.g, color.b);
 
   // Manipuladores do color picker
-  const handleColorPanelClick = (e) => {
+  const handleColorPanelClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!colorPanelRef.current) return;
     
     const rect = colorPanelRef.current.getBoundingClientRect();
     const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
     
-    setSaturation(Math.round(x * 100));
-    setPickerBrightness(Math.round((1 - y) * 255));
-  };
+    const newSaturation = Math.round(x * 100);
+    const newBrightness = Math.round((1 - y) * 255);
+    
+    const newRgb = hsbToRgb(hsb.h, newSaturation, newBrightness);
+    setColor(newRgb);
+  }, [hsb.h, hsbToRgb]);
 
-  const handleHueSliderClick = (e) => {
+  const handleHueSliderClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!hueSliderRef.current) return;
     
     const rect = hueSliderRef.current.getBoundingClientRect();
     const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    setHue(Math.round(x * 360));
+    const newHue = Math.round(x * 360);
+    
+    const newRgb = hsbToRgb(newHue, hsb.s, hsb.b);
+    setColor(newRgb);
+  }, [hsb.s, hsb.b, hsbToRgb]);
+
+  // Funções de edição
+  const startEditing = (field: EditableFieldType, currentValue: string | number) => {
+    setEditingField(field);
+    setTempValues({ ...tempValues, [field]: currentValue.toString() });
+  };
+
+  const handleEditChange = (field: EditableFieldType, value: string) => {
+    setTempValues({ ...tempValues, [field]: value });
+  };
+
+  const finishEditing = (field: EditableFieldType) => {
+    const value = tempValues[field];
+    let newColor = { ...color };
+    
+    switch (field) {
+      case 'r':
+        const r = Math.max(0, Math.min(255, parseInt(value) || 0));
+        newColor.r = r;
+        break;
+      case 'g':
+        const g = Math.max(0, Math.min(255, parseInt(value) || 0));
+        newColor.g = g;
+        break;
+      case 'b':
+        const b = Math.max(0, Math.min(255, parseInt(value) || 0));
+        newColor.b = b;
+        break;
+      case 'h':
+        const h = Math.max(0, Math.min(360, parseInt(value) || 0));
+        const rgbFromH = hsbToRgb(h, hsb.s, hsb.b);
+        newColor = rgbFromH;
+        break;
+      case 's':
+        const s = Math.max(0, Math.min(100, parseInt(value) || 0));
+        const rgbFromS = hsbToRgb(hsb.h, s, hsb.b);
+        newColor = rgbFromS;
+        break;
+      case 'v':
+        const v = Math.max(0, Math.min(255, parseInt(value) || 0));
+        const rgbFromV = hsbToRgb(hsb.h, hsb.s, v);
+        newColor = rgbFromV;
+        break;
+      case 'hex':
+        const hexRgb = hexToRgb(value);
+        if (hexRgb) newColor = hexRgb;
+        break;
+    }
+    
+    setColor(newColor);
+    setEditingField(null);
+    setTempValues({});
+  };
+
+  const cancelEditing = () => {
+    setEditingField(null);
+    setTempValues({});
   };
 
   // Verificar status da conexão
   const checkConnection = async () => {
     try {
       const response = await fetch(`${API_URL}`);
-      const data = await response.json();
+      const data: ApiResponse = await response.json();
       setIsConnected(data.connected);
-    } catch (error) {
+    } catch {
       setIsConnected(false);
     }
   };
 
-  const showMessage = (msg, duration = 3000) => {
+  const showMessage = (msg: string, duration = 3000) => {
     setMessage(msg);
     setTimeout(() => setMessage(''), duration);
   };
@@ -164,20 +265,20 @@ const LEDController = () => {
         })
       });
 
-      const data = await response.json();
+      const data: ApiResponse = await response.json();
       if (data.success) {
         showMessage('✓ Cor aplicada!');
       } else {
         showMessage('❌ Erro: ' + data.error);
       }
-    } catch (error) {
+    } catch {
       showMessage('❌ Erro de conexão');
     }
     setLoading(false);
   };
 
   // Enviar efeito para o Arduino
-  const sendEffect = async (effectId) => {
+  const sendEffect = async (effectId: number) => {
     setLoading(true);
     try {
       const response = await fetch(`${API_URL}`, {
@@ -190,20 +291,19 @@ const LEDController = () => {
         })
       });
 
-      const data = await response.json();
+      const data: ApiResponse = await response.json();
       if (data.success) {
         setEffect(effectId);
         showMessage(`✓ Efeito ${data.effectName} ativado!`);
       } else {
         showMessage('❌ Erro: ' + data.error);
       }
-    } catch (error) {
+    } catch {
       showMessage('❌ Erro de conexão');
     }
     setLoading(false);
   };
 
-  // Salvar configurações
   const saveConfig = async () => {
     setLoading(true);
     try {
@@ -213,19 +313,18 @@ const LEDController = () => {
         body: JSON.stringify({ action: 'save' })
       });
 
-      const data = await response.json();
+      const data: ApiResponse = await response.json();
       if (data.success) {
         showMessage('✓ Configurações salvas!');
       } else {
         showMessage('❌ Erro ao salvar');
       }
-    } catch (error) {
+    } catch {
       showMessage('❌ Erro de conexão');
     }
     setLoading(false);
   };
 
-  // Reset configurações
   const resetConfig = async () => {
     setLoading(true);
     try {
@@ -235,7 +334,7 @@ const LEDController = () => {
         body: JSON.stringify({ action: 'reset' })
       });
 
-      const data = await response.json();
+      const data: ApiResponse = await response.json();
       if (data.success) {
         showMessage('✓ Configurações resetadas!');
         setColor({ r: 255, g: 0, b: 0 });
@@ -244,13 +343,12 @@ const LEDController = () => {
       } else {
         showMessage('❌ Erro ao resetar');
       }
-    } catch (error) {
+    } catch {
       showMessage('❌ Erro de conexão');
     }
     setLoading(false);
   };
 
-  // Reconectar
   const reconnect = async () => {
     setLoading(true);
     try {
@@ -261,14 +359,14 @@ const LEDController = () => {
       });
       setTimeout(checkConnection, 2000);
       showMessage('🔄 Tentando reconectar...');
-    } catch (error) {
+    } catch {
       showMessage('❌ Erro ao reconectar');
     }
     setLoading(false);
   };
 
   // Cores predefinidas
-  const presetColors = [
+  const presetColors: PresetColor[] = [
     { name: 'Vermelho', r: 255, g: 0, b: 0 },
     { name: 'Verde', r: 0, g: 255, b: 0 },
     { name: 'Azul', r: 0, g: 0, b: 255 },
@@ -288,10 +386,38 @@ const LEDController = () => {
 
   // Gradientes para o picker
   const hueGradient = 'linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%)';
-  const satBrightGradient = `
-    linear-gradient(to right, #fff, hsl(${hue}, 100%, 50%)),
-    linear-gradient(to bottom, rgba(0,0,0,0), #000)
-  `;
+  const satBrightGradient = `linear-gradient(to right, #fff, hsl(${hsb.h}, 100%, 50%)), linear-gradient(to bottom, rgba(0,0,0,0), #000)`;
+
+  // Componente de campo editável
+  const EditableField = ({ label, value, field, suffix = '' }: EditableFieldProps) => (
+    <div className="bg-white/10 p-3 rounded-lg">
+      <div className="text-xs uppercase tracking-wider mb-1 text-center text-white/70 flex items-center justify-center gap-1">
+        {label}
+        <Edit3 className="w-3 h-3" />
+      </div>
+      {editingField === field ? (
+        <input
+          type="text"
+          value={tempValues[field] || ''}
+          onChange={(e) => handleEditChange(field, e.target.value)}
+          onBlur={() => finishEditing(field)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') finishEditing(field);
+            if (e.key === 'Escape') cancelEditing();
+          }}
+          className="w-full bg-white/20 text-white text-center font-mono rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          autoFocus
+        />
+      ) : (
+        <div
+          onClick={() => startEditing(field, value)}
+          className="font-mono text-center text-white cursor-pointer hover:bg-white/10 rounded px-2 py-1 transition-colors"
+        >
+          {value}{suffix}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4">
@@ -333,7 +459,7 @@ const LEDController = () => {
                 ref={colorPanelRef}
                 onClick={handleColorPanelClick}
                 onMouseDown={(e) => {
-                  const handleMove = (moveEvent) => handleColorPanelClick(moveEvent);
+                  const handleMove = (moveEvent: MouseEvent) => handleColorPanelClick(moveEvent as unknown as React.MouseEvent<HTMLDivElement>);
                   const handleUp = () => {
                     document.removeEventListener('mousemove', handleMove);
                     document.removeEventListener('mouseup', handleUp);
@@ -350,11 +476,12 @@ const LEDController = () => {
               ></div>
               
               <div
-                className="absolute w-4 h-4 border-2 border-white rounded-full -ml-2 -mt-2 pointer-events-none"
+                className="absolute w-4 h-4 border-2 border-white rounded-full -ml-2 -mt-2 pointer-events-none shadow-lg"
                 style={{
-                  left: `${saturation}%`,
-                  top: `${100 - (pickerBrightness / 255 * 100)}%`,
-                  backgroundColor: hexColor
+                  left: `${hsb.s}%`,
+                  top: `${100 - (hsb.b / 255 * 100)}%`,
+                  backgroundColor: hexColor,
+                  boxShadow: '0 0 0 1px rgba(0,0,0,0.3)'
                 }}
               ></div>
             </div>
@@ -365,7 +492,7 @@ const LEDController = () => {
                 ref={hueSliderRef}
                 onClick={handleHueSliderClick}
                 onMouseDown={(e) => {
-                  const handleMove = (moveEvent) => handleHueSliderClick(moveEvent);
+                  const handleMove = (moveEvent: MouseEvent) => handleHueSliderClick(moveEvent as unknown as React.MouseEvent<HTMLDivElement>);
                   const handleUp = () => {
                     document.removeEventListener('mousemove', handleMove);
                     document.removeEventListener('mouseup', handleUp);
@@ -379,24 +506,30 @@ const LEDController = () => {
               ></div>
               
               <div
-                className="absolute top-0 w-6 h-6 border-2 border-white rounded-full -ml-3 pointer-events-none"
+                className="absolute top-0 w-6 h-6 border-2 border-white rounded-full -ml-3 pointer-events-none shadow-lg"
                 style={{
-                  left: `${(hue / 360) * 100}%`,
-                  backgroundColor: `hsl(${hue}, 100%, 50%)`
+                  left: `${(hsb.h / 360) * 100}%`,
+                  backgroundColor: `hsl(${hsb.h}, 100%, 50%)`,
+                  boxShadow: '0 0 0 1px rgba(0,0,0,0.3)'
                 }}
               ></div>
             </div>
             
-            {/* Valores de cor e cores predefinidas */}
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div className="bg-white/10 p-3 rounded-lg">
-                <div className="text-xs uppercase tracking-wider mb-1 text-center text-white/70">RGB</div>
-                <div className="font-mono text-center text-white">{color.r}, {color.g}, {color.b}</div>
-              </div>
-              <div className="bg-white/10 p-3 rounded-lg">
-                <div className="text-xs uppercase tracking-wider mb-1 text-center text-white/70">HEX</div>
-                <div className="font-mono text-center text-white">{hexColor}</div>
-              </div>
+            {/* Campos editáveis de cor */}
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              <EditableField label="R" value={color.r} field="r" />
+              <EditableField label="G" value={color.g} field="g" />
+              <EditableField label="B" value={color.b} field="b" />
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              <EditableField label="H" value={hsb.h} field="h" suffix="°" />
+              <EditableField label="S" value={hsb.s} field="s" suffix="%" />
+              <EditableField label="V" value={hsb.b} field="v" />
+            </div>
+
+            <div className="mb-4">
+              <EditableField label="HEX" value={hexColor} field="hex" />
             </div>
 
             {/* Cores predefinidas */}
@@ -405,7 +538,7 @@ const LEDController = () => {
                 <button
                   key={index}
                   onClick={() => setColor({ r: preset.r, g: preset.g, b: preset.b })}
-                  className="aspect-square rounded-lg border-2 border-white/30 hover:border-white/60 transition-colors"
+                  className="aspect-square rounded-lg border-2 border-white/30 hover:border-white/60 transition-colors hover:scale-105 transform"
                   style={{ backgroundColor: `rgb(${preset.r}, ${preset.g}, ${preset.b})` }}
                   title={preset.name}
                 />
@@ -415,7 +548,7 @@ const LEDController = () => {
             <button
               onClick={sendColor}
               disabled={loading || !isConnected}
-              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 text-white font-semibold py-3 px-6 rounded-lg transition-all transform hover:scale-[1.02]"
             >
               {loading ? 'Enviando...' : 'Aplicar Cor'}
             </button>
@@ -434,10 +567,10 @@ const LEDController = () => {
                   key={eff.id}
                   onClick={() => sendEffect(eff.id)}
                   disabled={loading || !isConnected}
-                  className={`w-full p-3 rounded-lg border-2 transition-colors text-left ${
+                  className={`w-full p-3 rounded-lg border-2 transition-all text-left transform hover:scale-[1.02] ${
                     effect === eff.id
-                      ? 'border-cyan-400 bg-cyan-400/20 text-cyan-100'
-                      : 'border-white/30 hover:border-white/60 text-white'
+                      ? 'border-cyan-400 bg-cyan-400/20 text-cyan-100 shadow-lg shadow-cyan-400/20'
+                      : 'border-white/30 hover:border-white/60 text-white hover:bg-white/5'
                   }`}
                 >
                   <div className="font-semibold">{eff.name}</div>
@@ -464,19 +597,19 @@ const LEDController = () => {
             <div className="flex gap-2">
               <button
                 onClick={() => setBrightness(50)}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded"
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded transition-colors"
               >
                 Baixo
               </button>
               <button
                 onClick={() => setBrightness(128)}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded"
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded transition-colors"
               >
                 Médio
               </button>
               <button
                 onClick={() => setBrightness(255)}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded"
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded transition-colors"
               >
                 Alto
               </button>
@@ -490,7 +623,7 @@ const LEDController = () => {
               <button
                 onClick={saveConfig}
                 disabled={loading || !isConnected}
-                className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2"
+                className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02]"
               >
                 <Save className="w-4 h-4" />
                 Salvar na Memória
@@ -498,7 +631,7 @@ const LEDController = () => {
               <button
                 onClick={resetConfig}
                 disabled={loading || !isConnected}
-                className="w-full bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2"
+                className="w-full bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02]"
               >
                 <RotateCcw className="w-4 h-4" />
                 Reset Padrão
@@ -506,7 +639,7 @@ const LEDController = () => {
               <button
                 onClick={reconnect}
                 disabled={loading}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2"
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02]"
               >
                 <Wifi className="w-4 h-4" />
                 Reconectar
@@ -515,8 +648,6 @@ const LEDController = () => {
           </div>
         </div>
       </div>
-
-
     </div>
   );
 };
